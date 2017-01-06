@@ -1,0 +1,155 @@
+#!/bin/bash
+
+# Author Chad Skeeters 2016
+# https://github.com/cskeeters/tabsplice
+
+show() {
+    if [[ -t 1 ]]; then #Show color if stdout is a terminal
+        printf -- "\x1b[${2}m${1}\x1b[m\n"
+    else
+        printf -- "${1}\n"
+    fi
+}
+
+info() { show "INFO [$(basename "$0")]: $1" 34; } # blue
+warn() { show "WARN [$(basename "$0")]: $1" 33; } # yellow
+error() { show "ERROR [$(basename "$0")]: $1" 31; } # red
+die() { error "$1"; exit 1; }
+
+if [[ -z $@ || $# != "4" ]] ; then
+    BASESCRIPT=$(basename $0)
+    echo "The correct arguments were not passed to $BASESCRIPT.  Check your configuration."
+    exit 1
+fi
+
+# NOTE: Currently BASE is unused.  It's kept in case someone wants to modify this script and use base.
+BASE="$1"   # path to a tmp file containing the contents of the file as committed at the youngest common ancestor
+LOCAL="$2"  # path to a tmp file containing the contents of the file as committed in the current parent
+OTHER="$3"  # path to a tmp file containing the contents of the file as committed in the revision we're merging in
+
+OUTPUT="$4" # path where the final merged contents will exist.
+            # This currently contains the output of mercurial's internal premerge  with conflict markers
+
+# Use gnu sed if on OSX for better portability (brew install gnu-sed coreutils)
+type gsed >/dev/null 2>&1 && SED="gsed" || SED="sed"
+type gstat >/dev/null 2>&1 && STAT="gstat" || STAT="stat"
+type gmktemp >/dev/null 2>&1 && MKTEMP="gmktemp" || MKTEMP="mktemp"
+
+# Temporary files for left and right side, keeping file extensions for syntax highlighting
+OUTPUT_PATH="$(dirname ${OUTPUT})"
+OUTPUT_FILE="$(basename ${OUTPUT})"
+ALL_LOCAL="${OUTPUT_PATH}/${OUTPUT_FILE}.merged_all_local_edit"
+ALL_OTHER="${OUTPUT_PATH}/${OUTPUT_FILE}.merged_all_other"
+
+
+#create our own more reasonably named versions
+cp $(printf "%q %q" "$BASE" "${OUTPUT_PATH}/${OUTPUT_FILE}.base") || die "Error copying base"
+BASE="${OUTPUT_PATH}/${OUTPUT_FILE}.base"
+cp $(printf "%q %q" "$OTHER" "${OUTPUT_PATH}/${OUTPUT_FILE}.other") || die "Error copying other"
+OTHER="${OUTPUT_PATH}/${OUTPUT_FILE}.other"
+VIMSCRIPT=$(MKTEMP -t tabsplice.XXXX)
+
+# The 'Q' versions are safe to pass as shell arguments
+printf -v QBASE '%q' "${BASE}"
+printf -v QLOCAL '%q' "${LOCAL}"
+printf -v QOTHER '%q' "${OTHER}"
+printf -v QOUTPUT '%q' "${OUTPUT}"
+
+printf -v QALL_LOCAL '%q' "${ALL_LOCAL}"
+printf -v QALL_OTHER '%q' "${ALL_OTHER}"
+
+
+# if mercurial doesn't support premerge=keep, then OUTPUT will not have any conflict markers in it.
+# To get a premerged version with conflict markers in it, we will call merge.
+if ! egrep '<<<<<<<' "$QOUTPUT"; then
+    merge -L local -L base -L other -p "$QLOCAL" "$QBASE" "$QOTHER" > "$QOUTPUT"
+fi
+
+
+rm_temp() {
+    info "Cleaning up temp files"
+    rm -f "$QALL_LOCAL"
+    rm -f "$QALL_OTHER"
+
+    #if we created our own more reasonably named versions
+    rm -f "$QBASE"
+    rm -f "$QOTHER"
+
+    rm -f "$VIMSCRIPT"
+}
+
+# Always delete our temp files; hg will handle it's own temp files
+trap 'rm_temp' SIGINT SIGTERM EXIT
+
+info "Generating $(basename ${ALL_LOCAL}) and $(basename ${ALL_OTHER})"
+# Remove the conflict markers for each 'side' and put each into a temp file
+$SED -r -e '/^=======\r?$/,/^>>>>>>> /d' -e '/^<<<<<<< /d' "$QOUTPUT" > "$QALL_LOCAL" || die "Error running sed for LOCAL"
+$SED -r -e '/^<<<<<<< /,/^=======\r?$/d' -e '/^>>>>>>> /d' "$QOUTPUT" > "$QALL_OTHER" || die "Error running sed for REMOTE"
+
+OUTPUT_MODIFIED=$(STAT --format=%Z "$QOUTPUT")
+
+# Use VISUAL if it's vim based, if not use EDITOR if it's vim based, if not use vim
+cmd="vim"
+[[ ! -z "$EDITOR" && $EDITOR =~ vim ]] && cmd="$EDITOR"
+[[ ! -z "$VISUAL" && $VISUAL =~ vim ]] && cmd="$VISUAL"
+
+printf -v LEFT     '%q' "$ALL_LOCAL"
+printf -v RIGHT    '%q' "$ALL_OTHER"
+
+printf -v T2_LEFT  '%q' "$OUTPUT"
+printf -v T2_RIGHT '%q' "$OTHER"
+
+printf -v T3_LEFT  '%q' "$OUTPUT"
+printf -v T3_RIGHT '%q' "$LOCAL"
+
+info "Making vim source"
+cat << EOF > "$VIMSCRIPT"
+if has("gui_running")
+    " Maximize window
+    set lines=9999 columns=9999
+endif
+
+" Setup Tab 2
+tabedit ${T2_RIGHT}
+vertical diffsplit ${T2_LEFT}
+" Setup Tab 2
+tabedit ${T3_RIGHT}
+vertical diffsplit ${T3_LEFT}
+
+" Disable Folding
+tabdo windo set nofoldenable foldcolumn=0
+
+" Disable text hiding
+tabdo windo set conceallevel=0
+
+" CD to file being merged
+tabdo cd %:p:h
+
+" Reset the cursor the first change in the left window of each tab
+tabdo wincmd t
+tabdo norm! gg]c
+
+tabfirst
+
+" issues :diffupdate anytime cursor is moved
+autocmd CursorMoved,CursorMovedI * diffupdate
+EOF
+
+info "Running vim -d"
+# NOTE: vim will only take 10 -c arguments without error
+$cmd -f -d "$LEFT" "$RIGHT" -c "source $VIMSCRIPT"
+
+if [[ $? -eq 0 ]] ; then
+    # User exited vim without :cq
+
+    # Overwrite $OUTPUT only if OUTPUT was not modified directly
+    if [[ ${OUTPUT_MODIFIED} -eq $(STAT --format=%Z ${OUTPUT}) ]]; then
+        cp "$QALL_LOCAL" "$QOUTPUT" || die "Error copying ${ALL_LOCAL} to ${OUTPUT}"
+    fi
+
+    # hg/git reads this exit status and assumes $OUTPUT has been merged successfully
+    exit 0
+fi
+
+# hg/git reads this exit status marks $OUTPUT unresolved
+exit 1
