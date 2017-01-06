@@ -11,13 +11,14 @@ It's similar to [splice][splice], but it uses `vim`'s builtin tabs to provide mu
 
 Premises:
 
-* Vim is the editor you want to use when modifying any text including resolving any conflicts.
-* *Vim is not a merge tool.*  diffmode only looks good when diffing two buffers (in a tab).
+* Vim is the editor you want to use when modifying any text including resolving conflicts.
+* *Vim is not a merge tool.*  Another tool must be used to merge changes where no conflict results.
+* diff mode only looks good when diffing two buffers (in a tab).
 * If a 3-way merge algorithm can determine how to automatically merge some changes but results in conflicts for other changes, the developer should only review the conflicts.
 
 Based on these premises, the solution is to let the internal merge of hg/git or the external merge tool take a first pass at merging.  Then bring up vim in diff mode where both buffers being compared have non-conflicting hunks merged, but differ for the conflicting hunks.  If the buffer in the left split shows the file contents if all conflicts were resolved in favor of the LOCAL version of the file, and the buffer in the right split shows the file contents if all conflicts were resolved in favor of the OTHER version of the file, then vim's diff mode will allow us to
 
-* jump to conflicts using <kbd>[</kbd><kbd>c</kbd> <kbd>]</kbd><kbd>c</kbd>
+* jump to conflicts using <kbd>[</kbd><kbd>c</kbd> / <kbd>]</kbd><kbd>c</kbd>
 * move changes (<kbd>d</kbd><kbd>o</kbd> / <kbd>d</kbd><kbd>p</kbd>)from OTHER to LOCAL in order to create a manually merge version
 
 In order to achieve this solution, we need:
