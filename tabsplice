@@ -47,7 +47,7 @@ cp $(printf "%q %q" "$BASE" "${OUTPUT_PATH}/${OUTPUT_FILE}.base") || die "Error 
 BASE="${OUTPUT_PATH}/${OUTPUT_FILE}.base"
 cp $(printf "%q %q" "$OTHER" "${OUTPUT_PATH}/${OUTPUT_FILE}.other") || die "Error copying other"
 OTHER="${OUTPUT_PATH}/${OUTPUT_FILE}.other"
-VIMSCRIPT=$(MKTEMP -t tabsplice.XXXX)
+VIMSCRIPT=$($MKTEMP -t tabsplice.XXXX)
 
 # The 'Q' versions are safe to pass as shell arguments
 printf -v QBASE '%q' "${BASE}"
@@ -86,7 +86,7 @@ info "Generating $(basename ${ALL_LOCAL}) and $(basename ${ALL_OTHER})"
 $SED -r -e '/^=======\r?$/,/^>>>>>>> /d' -e '/^<<<<<<< /d' "$QOUTPUT" > "$QALL_LOCAL" || die "Error running sed for LOCAL"
 $SED -r -e '/^<<<<<<< /,/^=======\r?$/d' -e '/^>>>>>>> /d' "$QOUTPUT" > "$QALL_OTHER" || die "Error running sed for REMOTE"
 
-OUTPUT_MODIFIED=$(STAT --format=%Z "$QOUTPUT")
+OUTPUT_MODIFIED=$($STAT --format=%Z "$QOUTPUT")
 
 # Use VISUAL if it's vim based, if not use EDITOR if it's vim based, if not use vim
 cmd="vim"
@@ -143,7 +143,7 @@ if [[ $? -eq 0 ]] ; then
     # User exited vim without :cq
 
     # Overwrite $OUTPUT only if OUTPUT was not modified directly
-    if [[ ${OUTPUT_MODIFIED} -eq $(STAT --format=%Z ${OUTPUT}) ]]; then
+    if [[ ${OUTPUT_MODIFIED} -eq $($STAT --format=%Z ${OUTPUT}) ]]; then
         cp "$QALL_LOCAL" "$QOUTPUT" || die "Error copying ${ALL_LOCAL} to ${OUTPUT}"
     fi
 
