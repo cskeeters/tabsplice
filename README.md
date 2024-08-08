@@ -5,7 +5,7 @@ It's similar to [splice][splice], but it uses `vim`'s builtin tabs to provide mu
 `tabsplice` is a modification of [diffconflicts][diffconflicts] by whiteinge that supports mercurial.
 
 [diffconflicts]: https://github.com/whiteinge/dotfiles/blob/master/bin/diffconflicts
-[splice]: http://sjl.bitbucket.org/splice.vim/
+[splice]: https://github.com/sjl/splice.vim/
 
 # Context and the tabsplice solution
 
